@@ -1,5 +1,5 @@
-# Descifrador
-Descifrador is the spanish term for "decoder". This repository will be responsible for decoding an encrypted data and display it.
+# Descifrado
+Descifrado derived from Descifrador is the spanish term for "decoder". This repository will be responsible for decoding an encrypted data and displaying it.
 
 <img src="./assets/Decifrado.png">
 
