@@ -1,0 +1,138 @@
+name: End to end python project CI workflow
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: true
+        type: string
+      should_release:
+        description: "Release branch (always true for main)"
+        required: false
+        type: boolean
+        default: false
+      git_username:
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  py-project-ci:
+    name: Update - Vulnerability scan - Lint - Type checking - Tests - Build - Push 
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.head_ref }}
+          working-directory: ${{ inputs.working_directory }}
+
+      - name: Set branch name
+        run: echo "##[set-output name=branch;]$(git branch --show-current)"
+        id: extract_branch
+
+      - name: Set python version
+        id: python_version_step
+        run: echo "::set-output name=version::`cat Pipfile | grep python_version | cut -d'"' -f2`"
+        working-directory: ${{ inputs.working_directory }}
+      - name: Setup python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ steps.python_version_step.outputs.version }}
+          architecture: 'x64'
+      - name: Install pipenv
+        run: python3 -m pip install pipenv
+      - name: Install dependency packages
+        run: pipenv install --ignore-pipfile --dev
+        working-directory: ${{ inputs.working_directory }}
+      - name: Update dependency packages
+        run: pipenv update
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Configure git username
+        run: git config --global user.name ${{ inputs.git_username }}
+      - name: Commit Pipfile changes
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          git add Pipfile
+          git add Pipfile.lock
+          git commit -m "[BUILD] Updated Pipfile and Pipfile.lock" || echo "Nothing to commit"
+      - name: Push Pipfile changes 
+        uses: ad-m/github-push-action@master
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ steps.extract_branch.outputs.branch }}
+          working-directory: ${{ inputs.working_directory }}
+  
+      - name: Generate requirements.txt file
+        run: make requirements
+        working-directory: ${{ inputs.working_directory }}
+      - name: Run safety
+        if: always()
+        run: pipenv run make safety
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Run pylint
+        if: always()
+        run: pipenv run make lint
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Run black
+        if: always()
+        run: pipenv run make formatcheck
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Run typecheck
+        if: always()
+        run: pipenv run make typecheck
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Start backing services for tests
+        uses: "isbang/compose-action@v1.0.0"
+        with:
+          compose-file: './test-services.yaml'
+          down-flags: '--volumes'
+        if: always()
+      - name: Run pytest
+        if: always()
+        run: pipenv run make test
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Get version from setup.py
+        id: version
+        run: |
+          version=$(grep 'version' setup.py | awk -F"'" '{print $4}')
+          echo "::set-output name=version::$version"
+        working-directory: ${{ inputs.working_directory }}
+        shell: "bash"
+
+      - name: Downcase REPO_NAME
+        working-directory: ${{ inputs.working_directory }}
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
+      - name: Setting image name and tag as env var
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          echo "IMAGE_NAME=${{ env.REGISTRY }}/${{ env.REPO_NAME }}" >> $GITHUB_ENV
+          echo "TAG=${{ steps.version.outputs.version }}-${{ github.run_number }}" >> $GITHUB_ENV
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_NAME }}:${{ env.TAG }} .
+        working-directory: ${{ inputs.working_directory }}
+
+      - name: Push Docker image
+        if: github.ref == 'refs/heads/main' || github.event.inputs.should_release == 'true'
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          docker push ${{ env.IMAGE_NAME }}:${{ env.TAG }}
+          docker tag ${{ env.IMAGE_NAME }}:${{ env.TAG }} ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.IMAGE_NAME }}:latest

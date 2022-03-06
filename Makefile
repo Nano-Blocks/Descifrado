@@ -1,6 +1,6 @@
 APP_NAME = descifrado
 
-.PHONY: help clean test lint requirements safety typecheck rundev
+.PHONY: help clean test lint format formatcheck requirements safety typecheck rundev hooksinit
 
 help:
 	@echo "Note: Please make sure you are in pipenv shell"
@@ -9,6 +9,10 @@ help:
 	@echo "    Remove generated files"
 	@echo "lint"
 	@echo "    Print pylint score"
+	@echo "formatcheck"
+	@echo "    Run black formatter, don't write to files"
+	@echo "format"
+	@echo "    Run black formatter"
 	@echo "test"
 	@echo "    Run tests"
 	@echo "requirements"
@@ -19,6 +23,8 @@ help:
 	@echo "    Type check source"
 	@echo "rundev"
 	@echo "    Run server in autoreload mode"
+	@echo "hooksinit"
+	@echo "    Install pre commit hooks"
 	@echo ""
 
 clean:
@@ -38,6 +44,12 @@ lint:
 	mkdir -p reports/
 	pylint $(APP_NAME) tests --rcfile ./.pylintrc --output-format=parseable:reports/pylint-report.txt,parseable
 
+formatcheck:
+	black --check $(APP_NAME) tests
+
+format:
+	black $(APP_NAME) tests
+
 requirements:
 	pipenv lock --keep-outdated -r >> requirements.txt
 
@@ -49,3 +61,6 @@ typecheck:
 
 rundev:
 	INSECURE_ENGINE_REQUEST=true uvicorn $(APP_NAME):app --reload
+
+hooksinit:
+	pre-commit install

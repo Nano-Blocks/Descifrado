@@ -1,0 +1,25 @@
+name: Send notification if workflow has failed
+
+on:
+  workflow_call:
+    inputs:
+      timezone:
+        required: true
+        type: string
+    secrets:
+      ms_teams_webhook:
+        required: true
+
+jobs:
+  failure-notification:
+    name: Send notification if workflow has failed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Microsoft Teams Notification
+        uses: jdcargile/ms-teams-notification@v1.3
+        with:
+          github-token: ${{ github.token }}
+          ms-teams-webhook-uri: ${{ secrets.ms_teams_webhook }}
+          notification-summary: Build Failed
+          notification-color: f56042
+          timezone: ${{ inputs.timezone }}

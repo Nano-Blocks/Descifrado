@@ -1,0 +1,32 @@
+name: CI - python backend
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      should_release:
+        description: "Release branch (always true for main)"
+        required: false
+        default: "false"
+
+jobs:
+  py-project-ci:
+    uses: Nano-Blocks/Descifrado/.github/workflows/reuse-py-project-setup-action.yml@main
+    with:
+      working_directory: .
+      should_release: false
+      git_username: 'shahkv95'
+ 
+  failure-notification:
+    uses: Nano-Blocks/Descifrado/.github/workflows/reuse-failure-notification-action.yml@main
+    needs: [py-project-ci]
+    if: ${{ always() && github.ref == 'refs/heads/main' && (needs.py-project-ci.result=='failure') }}
+    with:
+      timezone: 'Asia/Kolkata'
+    secrets:
+      ms_teams_webhook: ${{ secrets.MS_TEAMS_WEBHOOK_URI }}
